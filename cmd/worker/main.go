@@ -1,37 +1,35 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
+
+	"github.com/vlady/travel-risk-radar/internal/config"
+	"github.com/vlady/travel-risk-radar/internal/observability"
 )
 
 func main() {
-	interval := getenvDuration("WORKER_INTERVAL", 30*time.Minute)
-
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-	slog.Info("starting worker", "interval", interval.String())
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		slog.Info("worker tick")
-		<-ticker.C
-	}
-}
-
-func getenvDuration(key string, fallback time.Duration) time.Duration {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-
-	duration, err := time.ParseDuration(value)
+	cfg, err := config.Load()
 	if err != nil {
-		slog.Warn("invalid duration env, using fallback", "key", key, "value", value, "fallback", fallback.String())
-		return fallback
+		slog.Error("load config", "error", err)
+		os.Exit(1)
 	}
 
-	return duration
+	logger := observability.NewLogger(cfg.Observability.LogLevel)
+	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	logger.Info("starting worker", "interval", cfg.Worker.Interval.String(), "env", cfg.App.Env)
+
+	if err := run(ctx, logger, cfg); err != nil {
+		logger.Error("worker stopped", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("worker stopped")
 }
