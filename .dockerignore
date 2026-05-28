@@ -1,0 +1,8 @@
+.git
+.env
+tmp/
+bin/
+*.out
+coverage.*
+*.coverprofile
+profile.cov
